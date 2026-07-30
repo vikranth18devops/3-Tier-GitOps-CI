@@ -1,91 +1,110 @@
-name: Node.js CI
+name: Node.js CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
 
 permissions:
-  contents: write   # required to push to CD repo with GITHUB_TOKEN or PAT
+  contents: write
 
 env:
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
+################################################################################
+# Compile
+################################################################################
   compile:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js (LTS recommended)
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '23'   # use LTS if you don't need v23
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            api/package-lock.json
 
-      - name: Frontend Compilation (Syntax Check)
+      - name: Frontend Syntax Check
         run: |
           cd client
           find . -name "*.js" -exec node --check {} +
 
-      - name: Backend Compilation (Syntax Check)
+      - name: Backend Syntax Check
         run: |
           cd api
           find . -name "*.js" -exec node --check {} +
 
-  gitleaks-scan:
+################################################################################
+# Gitleaks
+################################################################################
+  gitleaks_scan:
     runs-on: ubuntu-latest
     needs: compile
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Gitleaks Setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
 
-      - name: Gitleaks Scan
-        run: |
-          gitleaks detect --source ./client --exit-code 1
-          gitleaks detect --source ./api --exit-code 1
+      - name: Scan Frontend
+        run: gitleaks detect --source ./client --exit-code 1
 
+      - name: Scan Backend
+        run: gitleaks detect --source ./api --exit-code 1
+
+################################################################################
+# Trivy Filesystem Scan
+################################################################################
   trivy_fs_scan:
     runs-on: ubuntu-latest
-    needs: gitleaks-scan
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    needs: gitleaks_scan
 
-      - name: Run Trivy vulnerability scanner (FS)
-        uses: aquasecurity/trivy-action@0.28.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy Filesystem Scan
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
           format: table
+          exit-code: '1'
           ignore-unfixed: true
-          vuln-type: os,library
           severity: CRITICAL,HIGH
+          vuln-type: os,library
 
-  build_backend_docker_image_and_push:
+################################################################################
+# Backend Docker Build
+################################################################################
+  build_backend:
     runs-on: ubuntu-latest
     needs: trivy_fs_scan
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Login to Docker Hub
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push Docker image (backend)
+      - name: Build & Push Backend
         uses: docker/build-push-action@v6
         with:
           context: ./api
@@ -94,27 +113,30 @@ jobs:
           tags: |
             adijaiswal/backend:latest
             adijaiswal/backend:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-  build_frontend_docker_image_and_push:
+################################################################################
+# Frontend Docker Build
+################################################################################
+  build_frontend:
     runs-on: ubuntu-latest
     needs: trivy_fs_scan
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Login to Docker Hub
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push Docker image (frontend)
+      - name: Build & Push Frontend
         uses: docker/build-push-action@v6
         with:
           context: ./client
@@ -123,84 +145,96 @@ jobs:
           tags: |
             adijaiswal/frontend:latest
             adijaiswal/frontend:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
+################################################################################
+# Trivy Image Scan
+################################################################################
   trivy_image_scan:
     runs-on: ubuntu-latest
+
     needs:
-      - build_backend_docker_image_and_push
-      - build_frontend_docker_image_and_push
+      - build_backend
+      - build_frontend
+
     steps:
-      - name: Checkout (noop, keeps workspace consistent)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Run Trivy image scan for backend
-        uses: aquasecurity/trivy-action@0.28.0
+      - name: Scan Backend Image
+        uses: aquasecurity/trivy-action@master
         with:
-          scan-type: image
           image-ref: adijaiswal/backend:${{ env.IMAGE_TAG }}
-          format: table
-          exit-code: '0'                 # set to '1' to fail on vulns
-          ignore-unfixed: true
-          vuln-type: os,library
-          severity: CRITICAL,HIGH
-
-      - name: Run Trivy image scan for frontend
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
           scan-type: image
-          image-ref: adijaiswal/frontend:${{ env.IMAGE_TAG }}
           format: table
           exit-code: '0'
           ignore-unfixed: true
-          vuln-type: os,library
           severity: CRITICAL,HIGH
+          vuln-type: os,library
 
+      - name: Scan Frontend Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: adijaiswal/frontend:${{ env.IMAGE_TAG }}
+          scan-type: image
+          format: table
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          vuln-type: os,library
+
+################################################################################
+# GitOps CD Update
+################################################################################
   update_cd_repo:
     runs-on: ubuntu-latest
     needs: trivy_image_scan
+
     steps:
-      - name: Checkout CD repo
+      - name: Checkout GitOps Repository
         uses: actions/checkout@v4
         with:
           repository: jaiswaladi246/3-Tier-GitOps-CD
-          ref: main
           token: ${{ secrets.CD_REPO_TOKEN }}
+          ref: main
           path: cd
 
-      - name: Bump images in manifests (safe)
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+          https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update Kubernetes Manifests
         working-directory: cd
         env:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
-          curl -sL https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 -o yq && sudo install yq /usr/local/bin/yq
 
-          # -- Safety cleanup: remove any accidental .spec.template from Service docs
-          yq -i '(. | select(.kind=="Service")) |= del(.spec.template)' k8s-prod/backend.yaml
-          yq -i '(. | select(.kind=="Service")) |= del(.spec.template)' k8s-prod/frontend.yaml
-
-          # -- Update ONLY Deployment images (backend)
           yq -i '
             (. | select(.kind=="Deployment")
-               | .spec.template.spec.containers[]
-               | select(.name=="backend")
-               | .image)
+            | .spec.template.spec.containers[]
+            | select(.name=="backend")
+            | .image)
             = "adijaiswal/backend:" + strenv(IMAGE_TAG)
           ' k8s-prod/backend.yaml
 
-          # -- Update ONLY Deployment images (frontend)
           yq -i '
             (. | select(.kind=="Deployment")
-               | .spec.template.spec.containers[]
-               | select(.name=="frontend")
-               | .image)
+            | .spec.template.spec.containers[]
+            | select(.name=="frontend")
+            | .image)
             = "adijaiswal/frontend:" + strenv(IMAGE_TAG)
           ' k8s-prod/frontend.yaml
 
-      - name: Commit & push to CD repo
+      - name: Commit Changes
         working-directory: cd
         run: |
-          git config user.name "ci-bot"
-          git config user.email "ci-bot@users.noreply.github.com"
-          git add -A
-          git commit -m "bump images to ${IMAGE_TAG}" || echo "no changes"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add .
+
+          git commit -m "Update image tag to ${IMAGE_TAG}" || echo "No Changes"
+
           git push
