@@ -195,7 +195,7 @@ jobs:
       - name: Checkout GitOps Repository
         uses: actions/checkout@v4
         with:
-          repository: vikranthdevops18/3-Tier-GitOps-CD
+          repository: vikranth18devops/3-Tier-GitOps-CD
           token: ${{ secrets.CD_REPO_TOKEN }}
           ref: main
           path: cd
@@ -217,7 +217,7 @@ jobs:
                | .spec.template.spec.containers[]
                | select(.name=="backend")
             | .image)
-            = "vikranthdevops18/backend:" + strenv(IMAGE_TAG)
+            = "vikranth18devops/backend:" + strenv(IMAGE_TAG)
           ' k8s-prod/backend.yaml
 
           yq -i '
@@ -225,7 +225,7 @@ jobs:
             | .spec.template.spec.containers[]
             | select(.name=="frontend")
             | .image)
-            = "vikranthdevops18/frontend:" + strenv(IMAGE_TAG)
+            = "vikranth18devops/frontend:" + strenv(IMAGE_TAG)
           ' k8s-prod/frontend.yaml
 
       - name: Commit Changes
