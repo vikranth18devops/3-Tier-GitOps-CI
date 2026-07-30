@@ -83,7 +83,7 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
           vuln-type: os,library
-          trivyignores: .trivyignore
+          
 
 ################################################################################
 # Backend Docker Build
