@@ -83,6 +83,7 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
           vuln-type: os,library
+          trivyignores: .trivyignore
 
 ################################################################################
 # Backend Docker Build
@@ -143,8 +144,8 @@ jobs:
           file: ./client/Dockerfile
           push: true
           tags: |
-            adijaiswal/frontend:latest
-            adijaiswal/frontend:${{ env.IMAGE_TAG }}
+            vikranthdevops18/frontend:latest
+            vikranthdevops18/frontend:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -164,7 +165,7 @@ jobs:
       - name: Scan Backend Image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: adijaiswal/backend:${{ env.IMAGE_TAG }}
+          image-ref: vikranthdevops18/backend:${{ env.IMAGE_TAG }}
           scan-type: image
           format: table
           exit-code: '0'
@@ -175,7 +176,7 @@ jobs:
       - name: Scan Frontend Image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: adijaiswal/frontend:${{ env.IMAGE_TAG }}
+          image-ref: vikranthdevops18/frontend:${{ env.IMAGE_TAG }}
           scan-type: image
           format: table
           exit-code: '0'
@@ -194,7 +195,7 @@ jobs:
       - name: Checkout GitOps Repository
         uses: actions/checkout@v4
         with:
-          repository: jaiswaladi246/3-Tier-GitOps-CD
+          repository: vikranthdevops18/3-Tier-GitOps-CD
           token: ${{ secrets.CD_REPO_TOKEN }}
           ref: main
           path: cd
@@ -216,7 +217,7 @@ jobs:
                | .spec.template.spec.containers[]
                | select(.name=="backend")
             | .image)
-            = "adijaiswal/backend:" + strenv(IMAGE_TAG)
+            = "vikranthdevops18/backend:" + strenv(IMAGE_TAG)
           ' k8s-prod/backend.yaml
 
           yq -i '
@@ -224,7 +225,7 @@ jobs:
             | .spec.template.spec.containers[]
             | select(.name=="frontend")
             | .image)
-            = "adijaiswal/frontend:" + strenv(IMAGE_TAG)
+            = "vikranthdevops18/frontend:" + strenv(IMAGE_TAG)
           ' k8s-prod/frontend.yaml
 
       - name: Commit Changes
