@@ -217,7 +217,7 @@ jobs:
                | .spec.template.spec.containers[]
                | select(.name=="backend")
             | .image)
-            = "vikranth18devops/backend:" + strenv(IMAGE_TAG)
+            = "vikranthdevops18/backend:" + strenv(IMAGE_TAG)
           ' k8s-prod/backend.yaml
 
           yq -i '
@@ -225,7 +225,7 @@ jobs:
             | .spec.template.spec.containers[]
             | select(.name=="frontend")
             | .image)
-            = "vikranth18devops/frontend:" + strenv(IMAGE_TAG)
+            = "vikranthdevops18/frontend:" + strenv(IMAGE_TAG)
           ' k8s-prod/frontend.yaml
 
       - name: Commit Changes
